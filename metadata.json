@@ -1,0 +1,5 @@
+{
+  "name": "Gemini PDF Pro",
+  "description": "An AI-powered document converter that transforms PDFs into editable Word documents and structured Excel spreadsheets using Gemini's advanced vision and OCR capabilities.",
+  "requestFramePermissions": []
+}
