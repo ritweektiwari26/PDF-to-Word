@@ -10,6 +10,18 @@ if (pdfjsLib) {
   pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 }
 
+/**
+ * Reads a file as a data URL. Useful for images.
+ */
+export const fileToDataUrl = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+};
+
 export const extractPagesAsImages = async (file: File): Promise<DocumentPage[]> => {
   if (!pdfjsLib) throw new Error("PDF.js library not loaded");
   
@@ -44,7 +56,6 @@ export const generateExcel = (tables: TableData[], filename: string) => {
   const wb = XLSX.utils.book_new();
 
   if (tables.length === 0) {
-    // Create a default sheet if no tables were found
     const ws = XLSX.utils.aoa_to_sheet([["No tables found by AI"]]);
     XLSX.utils.book_append_sheet(wb, ws, "Info");
   } else {
@@ -59,14 +70,12 @@ export const generateExcel = (tables: TableData[], filename: string) => {
 };
 
 export const generateWord = async (markdownText: string, filename: string) => {
-  // Basic Markdown line-by-line conversion logic
   const lines = markdownText.split('\n');
   const children: Paragraph[] = [];
 
   lines.forEach(line => {
     const trimmed = line.trim();
     if (!trimmed && children.length > 0) {
-      // Add a small spacer for empty lines
       children.push(new Paragraph({ children: [] }));
       return;
     }
@@ -116,6 +125,5 @@ export const generateWord = async (markdownText: string, filename: string) => {
   a.download = `${filename}.docx`;
   a.click();
   
-  // Clean up URL after small delay to ensure download starts
   setTimeout(() => URL.revokeObjectURL(url), 100);
 };

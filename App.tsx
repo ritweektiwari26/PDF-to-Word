@@ -11,10 +11,11 @@ import {
   FileSpreadsheet,
   Download,
   ArrowRight,
-  FileCode
+  FileCode,
+  Image as ImageIcon
 } from 'lucide-react';
 import { ConversionTarget, ConversionStatus, DocumentPage, TableData } from './types';
-import { extractPagesAsImages, generateExcel, generateWord } from './services/fileService';
+import { extractPagesAsImages, generateExcel, generateWord, fileToDataUrl } from './services/fileService';
 import { processPageWithGemini } from './services/geminiService';
 
 const App: React.FC = () => {
@@ -35,25 +36,35 @@ const App: React.FC = () => {
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
-    if (selectedFile && selectedFile.type === 'application/pdf') {
-      setFile(selectedFile);
-      setPages([]);
-      setConversionResult(null);
-      setStatus({ step: 'Ready to convert', progress: 0, isProcessing: false });
-      
-      try {
-        const extractedPages = await extractPagesAsImages(selectedFile);
-        setPages(extractedPages);
-      } catch (err) {
-        setStatus(prev => ({ ...prev, error: 'Failed to preview PDF' }));
+    if (selectedFile) {
+      const isPdf = selectedFile.type === 'application/pdf';
+      const isImage = selectedFile.type.startsWith('image/');
+
+      if (isPdf || isImage) {
+        setFile(selectedFile);
+        setPages([]);
+        setConversionResult(null);
+        setStatus({ step: 'Ready to convert', progress: 0, isProcessing: false });
+        
+        try {
+          if (isPdf) {
+            const extractedPages = await extractPagesAsImages(selectedFile);
+            setPages(extractedPages);
+          } else {
+            const dataUrl = await fileToDataUrl(selectedFile);
+            setPages([{ index: 1, dataUrl }]);
+          }
+        } catch (err) {
+          setStatus(prev => ({ ...prev, error: 'Failed to process file' }));
+        }
+      } else {
+        alert('Please upload a valid PDF or Image file (PNG, JPG).');
       }
-    } else {
-      alert('Please upload a valid PDF file.');
     }
   };
 
   const triggerDownload = async (targetType: ConversionTarget, data: any, fileName: string) => {
-    const cleanFileName = fileName.replace('.pdf', '');
+    const cleanFileName = fileName.replace(/\.(pdf|png|jpg|jpeg)$/i, '');
     if (targetType === ConversionTarget.EXCEL) {
       generateExcel(data.tables || [], cleanFileName);
     } else {
@@ -103,8 +114,6 @@ const App: React.FC = () => {
       }
 
       setConversionResult(finalData);
-      
-      // AUTOMATIC DOWNLOAD TRIGGER
       await triggerDownload(target, finalData, file.name);
 
       setStatus({
@@ -139,7 +148,6 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
-      {/* Header */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -161,14 +169,13 @@ const App: React.FC = () => {
       <main className="max-w-4xl mx-auto px-4 py-12">
         <div className="text-center mb-12">
           <h2 className="text-4xl font-extrabold text-slate-900 mb-4 tracking-tight">
-            Convert PDFs with AI precision
+            Convert Documents with AI precision
           </h2>
           <p className="text-lg text-slate-600 max-w-2xl mx-auto">
-            Our AI engine uses Gemini 3 Flash to understand your documents, extracting tables into Excel or layouts into Word with unmatched accuracy.
+            Our AI engine uses Gemini 3 Flash to understand your PDFs and images, extracting tables into Excel or layouts into Word with unmatched accuracy.
           </p>
         </div>
 
-        {/* Upload Area */}
         {!file ? (
           <div 
             onClick={() => fileInputRef.current?.click()}
@@ -178,26 +185,27 @@ const App: React.FC = () => {
               type="file" 
               ref={fileInputRef} 
               onChange={handleFileSelect} 
-              accept=".pdf" 
+              accept=".pdf,image/png,image/jpeg" 
               className="hidden" 
             />
             <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
               <Upload className="text-indigo-600" size={32} />
             </div>
-            <h3 className="text-xl font-bold mb-2 text-slate-800">Click to upload your PDF</h3>
-            <p className="text-slate-500">Maximum file size 25MB. Supports scanned documents.</p>
+            <h3 className="text-xl font-bold mb-2 text-slate-800">Click to upload PDF or Image</h3>
+            <p className="text-slate-500">Supports PDF, PNG, JPG (Max 25MB). Perfect for scanned documents.</p>
           </div>
         ) : (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            {/* File Info Card */}
             <div className="bg-white border border-slate-200 rounded-xl p-6 flex items-center justify-between shadow-sm">
               <div className="flex items-center gap-4">
-                <div className="bg-red-50 p-3 rounded-lg text-red-600">
-                  <FileText size={32} />
+                <div className={`${file.type === 'application/pdf' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'} p-3 rounded-lg`}>
+                  {file.type === 'application/pdf' ? <FileText size={32} /> : <ImageIcon size={32} />}
                 </div>
                 <div>
                   <h4 className="font-bold text-lg text-slate-800 truncate max-w-[250px] sm:max-w-md">{file.name}</h4>
-                  <p className="text-slate-500 text-sm font-medium">{(file.size / (1024 * 1024)).toFixed(2)} MB • {pages.length} pages</p>
+                  <p className="text-slate-500 text-sm font-medium">
+                    {(file.size / (1024 * 1024)).toFixed(2)} MB • {pages.length} {pages.length === 1 ? 'page' : 'pages'}
+                  </p>
                 </div>
               </div>
               {!status.isProcessing && (
@@ -211,7 +219,6 @@ const App: React.FC = () => {
               )}
             </div>
 
-            {/* Target Selection */}
             {!status.isProcessing && status.progress === 0 && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <button
@@ -249,7 +256,6 @@ const App: React.FC = () => {
               </div>
             )}
 
-            {/* Action Area */}
             <div className="bg-white border border-slate-200 rounded-xl p-8 shadow-md">
               {status.isProcessing ? (
                 <div className="space-y-6">
@@ -267,7 +273,7 @@ const App: React.FC = () => {
                     ></div>
                   </div>
                   <p className="text-center text-slate-500 text-sm italic font-medium">
-                    Gemini is analyzing your document. This usually takes 10-20 seconds...
+                    Gemini is analyzing your content. This usually takes 10-20 seconds...
                   </p>
                 </div>
               ) : status.progress === 100 ? (
@@ -320,19 +326,18 @@ const App: React.FC = () => {
                   </button>
                   <div className="mt-8 flex flex-wrap justify-center items-center gap-6 text-slate-500 text-sm font-semibold">
                     <span className="flex items-center gap-1.5"><CheckCircle2 size={16} className="text-emerald-500" /> AI OCR</span>
-                    <span className="flex items-center gap-1.5"><CheckCircle2 size={16} className="text-emerald-500" /> Structure Preservation</span>
+                    <span className="flex items-center gap-1.5"><CheckCircle2 size={16} className="text-emerald-500" /> Scanned Image Support</span>
                     <span className="flex items-center gap-1.5"><CheckCircle2 size={16} className="text-emerald-500" /> High Precision</span>
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Document Preview */}
             {pages.length > 0 && !status.isProcessing && status.progress !== 100 && (
               <div className="mt-12">
                 <h4 className="font-bold text-slate-800 mb-6 flex items-center gap-2 text-lg">
                   <FileText size={20} className="text-indigo-600" />
-                  Document Preview
+                  File Preview
                 </h4>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   {pages.map((page) => (
@@ -342,7 +347,7 @@ const App: React.FC = () => {
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors"></div>
                       </div>
                       <span className="absolute bottom-3 left-3 bg-slate-900/80 text-white text-[10px] font-bold px-2 py-1 rounded-md backdrop-blur-md">
-                        P{page.index}
+                        {file.type === 'application/pdf' ? `P${page.index}` : 'Image'}
                       </span>
                     </div>
                   ))}
@@ -352,7 +357,6 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* Features Section */}
         <div className="mt-32 grid grid-cols-1 md:grid-cols-3 gap-12">
           <div className="space-y-4 p-6 rounded-2xl bg-white border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
             <div className="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center">
@@ -365,20 +369,20 @@ const App: React.FC = () => {
           </div>
           <div className="space-y-4 p-6 rounded-2xl bg-white border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
             <div className="w-12 h-12 bg-violet-100 text-violet-600 rounded-xl flex items-center justify-center">
-              <FileCode size={24} />
+              <ImageIcon size={24} />
             </div>
-            <h5 className="font-extrabold text-lg text-slate-900">Contextual OCR</h5>
+            <h5 className="font-extrabold text-lg text-slate-900">OCR for Scans & Photos</h5>
             <p className="text-sm text-slate-600 leading-relaxed font-medium">
-              Unlike standard OCR, Gemini understands context, ensuring that multi-column layouts and nested lists stay logical in Word.
+              Easily convert camera photos of documents or screenshots into editable formats with high-fidelity text recognition.
             </p>
           </div>
           <div className="space-y-4 p-6 rounded-2xl bg-white border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
             <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center">
               <CheckCircle2 size={24} />
             </div>
-            <h5 className="font-extrabold text-lg text-slate-900">Native Accuracy</h5>
+            <h5 className="font-extrabold text-lg text-slate-900">Contextual Reasoning</h5>
             <p className="text-sm text-slate-600 leading-relaxed font-medium">
-              Built on Gemini 3 Pro reasoning, this tool achieves higher semantic accuracy than legacy document converters.
+              Gemini 3 Pro doesn't just read text; it understands the logical flow, ensuring multi-column layouts stay intact.
             </p>
           </div>
         </div>
